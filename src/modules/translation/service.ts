@@ -1,3 +1,4 @@
 export function shouldTranslate(language: string): boolean {
-  return language.toLowerCase() !== "zh";
+  const normalizedLanguage = language.trim().toLowerCase();
+  return normalizedLanguage !== "zh" && !normalizedLanguage.startsWith("zh-");
 }
