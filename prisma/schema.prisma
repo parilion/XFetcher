@@ -25,9 +25,11 @@ model SourceAccount {
   groupId     String
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
-  group       AccountGroup   @relation(fields: [groupId], references: [id])
+  group       AccountGroup   @relation(fields: [groupId], references: [id], onDelete: Restrict)
   rawPosts    RawPost[]
   crawlRuns   CrawlRun[]
+
+  @@index([groupId])
 }
 
 model RawPost {
@@ -40,9 +42,10 @@ model RawPost {
   fetchedAt        DateTime         @default(now())
   sourceType       String
   rawPayload       Json
-  sourceAccount    SourceAccount    @relation(fields: [sourceAccountId], references: [id])
+  sourceAccount    SourceAccount    @relation(fields: [sourceAccountId], references: [id], onDelete: Cascade)
   translation      PostTranslation?
 
+  @@index([sourceAccountId])
   @@unique([sourceAccountId, externalPostId])
 }
 
@@ -55,7 +58,9 @@ model PostTranslation {
   modelName        String   @default("mock-translator")
   modelVersion     String   @default("v1")
   translatedAt     DateTime?
-  rawPost          RawPost  @relation(fields: [rawPostId], references: [id])
+  rawPost          RawPost  @relation(fields: [rawPostId], references: [id], onDelete: Cascade)
+
+  @@index([rawPostId])
 }
 
 model CrawlRun {
@@ -69,5 +74,7 @@ model CrawlRun {
   errorSummary           String         @default("")
   startedAt              DateTime       @default(now())
   finishedAt             DateTime?
-  sourceAccount          SourceAccount  @relation(fields: [sourceAccountId], references: [id])
+  sourceAccount          SourceAccount  @relation(fields: [sourceAccountId], references: [id], onDelete: Cascade)
+
+  @@index([sourceAccountId])
 }
