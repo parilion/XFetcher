@@ -1,177 +1,177 @@
-# AI Early Brief Tool Design
+# AI 早报工具设计文档
 
-Date: 2026-06-04
-Status: Draft approved in conversation, pending user review of written spec
+日期：2026-06-04
+状态：对话内已确认，等待后续按计划实现
 
-## 1. Goal
+## 1. 目标
 
-Build a personal web-based AI news reader that continuously fetches the latest posts from a user-managed whitelist of X accounts and presents them in a real-time feed.
+构建一个个人使用的 Web AI 资讯阅读工具，持续抓取用户维护的 X 白名单账号最新原创内容，并以实时流的方式展示。
 
-The first version prioritizes:
+第一版优先保证：
 
-- Stable fetching
-- Clear reading experience
-- Web-based configuration
-- Cloud-server-friendly deployment
+- 抓取稳定
+- 阅读清晰
+- 网页可配置
+- 适合部署在云服务器
 
-The first version does not prioritize:
+第一版不优先处理：
 
-- AI-based content selection
-- Multi-user support
-- Notification delivery
-- Product-grade multi-service infrastructure
+- AI 内容筛选
+- 多用户支持
+- 消息推送
+- 复杂的多服务基础设施
 
-## 2. Product Scope
+## 2. 产品范围
 
-### In scope
+### 第一版包含
 
-- Personal-use tool
-- Web UI as the primary consumption surface
-- Whitelisted X accounts as the only content source
-- Original posts only
-- Full display of all fetched posts
-- English original text plus system-generated Chinese translation
-- Real-time feed page
-- Same-day summary page as a daily aggregation view
-- Admin pages for account, group, crawler, proxy, and translation configuration
-- Proxy-pool-backed fetching infrastructure
-- Pluggable X source adapter design
+- 个人使用
+- 网页作为主要使用入口
+- 指定 X 账号白名单作为唯一内容源
+- 只抓原创帖
+- 抓到的内容全部展示
+- 保留英文原文并由系统生成中文翻译
+- 实时流页面
+- 今日汇总页面
+- 账号、分组、抓取、代理、翻译设置的后台页面
+- 基于代理池的抓取基础设施
+- 可插拔的 X 数据源适配器设计
 
-### Out of scope for v1
+### 第一版不包含
 
-- AI filtering or ranking
-- Importance scoring
-- Tagging taxonomy
-- Quote posts, reposts, replies
-- Push notifications
-- Public productization
-- Multi-tenant auth and permissions
-- Dependence on X built-in translation output
+- AI 筛选或排序
+- 重要性评分
+- 标签体系
+- 引用帖、转推、回复
+- 推送能力
+- 面向公众的产品化能力
+- 多租户权限系统
+- 依赖 X 自带翻译结果
 
-## 3. Requirements Confirmed
+## 3. 已确认需求
 
-The user confirmed the following product decisions:
+用户已确认以下产品方向：
 
-- Audience: personal tool
-- Primary usage: web viewing
-- Source type: specified X account whitelist
-- Display granularity: full results, not filtered
-- X access approach: source layer must be replaceable
-- Proxy pool meaning: network proxy IP pool for anti-scraping
-- Time windows: both near-real-time homepage and same-day summary page
-- Homepage ordering: reverse chronological
-- Display language: English original plus Chinese translation
-- Configurability: web-admin-first, not code-first
-- Content type: original posts only
-- Non-AI-relevant posts from whitelisted accounts: still keep them
-- Account maintenance: group-based management
-- Deployment assumption: cloud-server-oriented, while remaining local-runnable
+- 面向对象：个人工具
+- 主要使用方式：网页查看
+- 信息来源：指定 X 账号白名单
+- 展示粒度：全量展示，不筛选
+- X 接入方式：数据源层必须可替换
+- 代理池含义：网络代理 IP 池，用于对抗反爬
+- 时间窗口：首页看近实时，同时保留今日汇总页
+- 首页排序：按时间倒序
+- 展示语言：英文原文 + 中文翻译
+- 配置方式：优先网页后台，而不是改代码
+- 内容类型：只抓原创帖
+- 非 AI 强相关内容：来自白名单账号也照常保留
+- 账号维护方式：按分组管理
+- 部署方式：优先按云服务器设计，同时保留本地运行可能
 
-## 4. Architecture
+## 4. 架构设计
 
-V1 should use a single web application with asynchronous background jobs and one database.
+第一版采用单个 Web 应用配合异步后台任务和单数据库的结构。
 
-This keeps deployment simple while preserving clean internal boundaries.
+这样部署简单，同时内部边界仍然清晰。
 
-### 4.1 Main modules
+### 4.1 核心模块
 
-#### Scheduler
+#### 调度器
 
-Responsible for:
+负责：
 
-- Triggering crawl jobs by account group and configured interval
-- Limiting concurrency
-- Retrying failed jobs
-- Recording run results
+- 按账号分组和配置频率触发抓取任务
+- 控制并发
+- 重试失败任务
+- 记录运行结果
 
-#### X Fetcher
+#### X 抓取器
 
-Responsible for:
+负责：
 
-- Pulling new original posts for specific whitelisted accounts
-- Normalizing raw source responses into a stable internal post format
+- 为指定白名单账号拉取新的原创帖
+- 将不同数据源返回的结果标准化为统一内部格式
 
-It is internally split into:
+内部再拆成：
 
-- Source adapter
-- Proxy session manager
+- 数据源适配器
+- 代理 session 管理器
 
-#### Source Adapter
+#### 数据源适配器
 
-Provides a stable interface for fetching X posts.
+提供稳定的抓取接口。
 
-The application must not depend directly on one concrete X access method. Adapters may later target:
+应用层不能直接依赖某一种具体 X 接入方式。后续可替换为：
 
-- Official API
-- Third-party API
-- Browser-automation-based fetch path
+- 官方 API
+- 第三方 API
+- 浏览器自动化方案
 
-#### Proxy Session Manager
+#### 代理 Session 管理器
 
-Responsible for:
+负责：
 
-- Using the user's proxy pool
-- Managing rotation or sticky sessions
-- Tracking timeouts and failures
-- Switching proxy/session when needed
+- 使用用户提供的代理池
+- 管理轮换 session 或黏性 session
+- 跟踪超时与失败
+- 在需要时切换代理或 session
 
-Proxy pool is an infrastructure dependency, not a user-facing product concept.
+代理池属于抓取基础设施，不是用户界面的核心产品概念。
 
-#### Translation Pipeline
+#### 翻译流水线
 
-Responsible for:
+负责：
 
-- Translating fetched non-Chinese content into Chinese
-- Updating translation state asynchronously
+- 将抓取到的非中文内容翻译为中文
+- 以异步方式更新翻译状态
 
-V1 uses translation only. It does not perform content selection, ranking, or tagging.
+第一版只做翻译，不做内容筛选、排序或标签。
 
-#### Storage Layer
+#### 存储层
 
-Responsible for persisting:
+负责持久化：
 
-- Source accounts
-- Account groups
-- Raw fetched posts
-- Translation results
-- Crawl runs
-- System settings
+- 白名单账号
+- 账号分组
+- 原始抓取结果
+- 翻译结果
+- 抓取运行记录
+- 系统设置
 
-#### Web UI
+#### Web 界面
 
-Split into:
+拆成：
 
-- Reader-facing pages
-- Admin/configuration pages
-- System status page
+- 面向阅读的前台页面
+- 面向配置的后台页面
+- 面向运维的系统状态页面
 
-## 5. Data Flow
+## 5. 数据流
 
-For each fetch cycle:
+一次抓取任务的完整路径如下：
 
-1. Scheduler triggers a crawl job for one or more account groups.
-2. X Fetcher requests new original posts using a source adapter and proxy session manager.
-3. Results are normalized into an internal post format.
-4. Posts are deduplicated by account plus post ID.
-5. Raw posts are stored immediately.
-6. Translation jobs are queued for posts that need Chinese translation.
-7. The homepage displays all fetched content in reverse chronological order.
-8. The daily summary page shows the same day's complete set of cards.
+1. 调度器按账号组触发抓取任务。
+2. X 抓取器通过数据源适配器和代理 session 管理器拉取新原创帖。
+3. 返回结果被标准化为统一内部帖子格式。
+4. 按账号和帖子 ID 做去重。
+5. 原始帖子立即入库。
+6. 需要翻译的内容进入翻译任务队列。
+7. 首页按发布时间倒序展示全部内容。
+8. 今日汇总页展示当天全部卡片。
 
-### Key principles
+### 核心原则
 
-- No content filtering in v1
-- No importance scoring in v1
-- Raw data and translated data are stored separately
-- Translation failure must not block post ingestion
+- 第一版不做内容筛选
+- 第一版不做重要性评分
+- 原始抓取数据和翻译结果分开存储
+- 翻译失败不能阻塞帖子入库与展示
 
-## 6. Data Model
+## 6. 数据模型
 
-The exact schema can change, but these entities are required.
+具体字段名后续可以在实现时微调，但这些实体必须存在。
 
 ### 6.1 `source_accounts`
 
-Fields:
+字段：
 
 - id
 - x_handle
@@ -183,7 +183,7 @@ Fields:
 
 ### 6.2 `account_groups`
 
-Fields:
+字段：
 
 - id
 - name
@@ -194,7 +194,7 @@ Fields:
 
 ### 6.3 `raw_posts`
 
-Fields:
+字段：
 
 - id
 - source_account_id
@@ -206,13 +206,13 @@ Fields:
 - source_type
 - raw_payload
 
-Uniqueness constraint:
+唯一约束：
 
 - `source_account_id + external_post_id`
 
 ### 6.4 `post_translations`
 
-Fields:
+字段：
 
 - id
 - raw_post_id
@@ -225,7 +225,7 @@ Fields:
 
 ### 6.5 `crawl_runs`
 
-Fields:
+字段：
 
 - id
 - trigger_type
@@ -240,221 +240,221 @@ Fields:
 
 ### 6.6 `system_settings`
 
-Holds configuration such as:
+用于保存：
 
-- global fetch interval
-- concurrency limit
-- source adapter settings
-- proxy settings
-- translation model settings
-- translation prompt settings
+- 全局抓取频率
+- 并发上限
+- 数据源适配器配置
+- 代理设置
+- 翻译模型设置
+- 翻译提示词设置
 
-## 7. Frontend Design
+## 7. 前台页面设计
 
-The reader-facing UI should stay compact and reading-focused.
+前台应保持紧凑、偏阅读器风格。
 
-### 7.1 Real-time Feed
+### 7.1 实时流
 
-Purpose:
+用途：
 
-- Show all fetched content ordered by newest first
+- 展示全部已抓取内容，最新内容优先
 
-Each card should include:
+每张卡片至少包含：
 
-- account display name
-- account handle
-- account group
-- post time
-- English original text
-- Chinese translation
-- original X link
+- 账号显示名
+- 账号 handle
+- 所属分组
+- 发布时间
+- 英文原文
+- 中文翻译
+- 原帖链接
 
-Top-level filters should include:
+页面顶部提供基础筛选：
 
-- account group
-- account
-- time window, such as recent 3 hours, 24 hours, today
+- 按分组筛选
+- 按账号筛选
+- 按时间窗口筛选，例如最近 3 小时、24 小时、今天
 
-### 7.2 Daily Summary
+### 7.2 今日汇总
 
-Purpose:
+用途：
 
-- Show the current day's complete set of fetched cards
+- 展示当天全部抓取到的卡片
 
-This is not an AI-generated digest. It is a day-scoped aggregation view.
+这不是 AI 自动生成的摘要，而是按当天范围聚合出来的浏览页。
 
-### 7.3 System Status
+### 7.3 系统状态
 
-Purpose:
+用途：
 
-- Let the user quickly see whether the system is healthy
+- 让用户快速判断系统是否健康
 
-Should show:
+至少显示：
 
-- recent crawl runs
-- last successful fetch time
-- success/failure counts
-- translation queue state
-- recent errors
+- 最近抓取任务记录
+- 最近一次成功抓取时间
+- 成功/失败数量
+- 翻译队列状态
+- 最近错误信息
 
-## 8. Admin Design
+## 8. 后台设计
 
-The admin area should be configuration-first, not code-first.
+后台应以“可配置”为核心，而不是依赖改代码。
 
-### 8.1 Account Management
+### 8.1 账号管理
 
-Capabilities:
+能力：
 
-- add account
-- remove account
-- enable/disable account
-- assign account to group
+- 新增账号
+- 删除账号
+- 启用/停用账号
+- 将账号分配到分组
 
-### 8.2 Group Management
+### 8.2 分组管理
 
-Capabilities:
+能力：
 
-- create group
-- edit group
-- delete group
-- configure default fetch interval
+- 创建分组
+- 编辑分组
+- 删除分组
+- 设置分组默认抓取频率
 
-### 8.3 Crawl and Proxy Settings
+### 8.3 抓取与代理设置
 
-Capabilities:
+能力：
 
-- configure global fetch interval
-- configure concurrency
-- configure retry count
-- configure timeout
-- configure source adapter settings
-- configure proxy provider settings
-- choose rotation or sticky mode
+- 配置全局抓取频率
+- 配置并发上限
+- 配置重试次数
+- 配置超时阈值
+- 配置数据源适配器
+- 配置代理供应商参数
+- 选择轮换模式或黏性模式
 
-### 8.4 Translation Settings
+### 8.4 翻译设置
 
-Capabilities:
+能力：
 
-- configure translation model
-- configure translation prompt
-- choose whether backlog translation runs automatically
+- 配置翻译模型
+- 配置翻译提示词
+- 决定是否自动处理历史积压内容
 
-## 9. Proxy Requirements
+## 9. 代理相关要求
 
-The supplied proxy website example provides only connectivity parameters, not a complete crawler solution.
+代理服务商提供的示例代码只说明“如何连上代理”，不等于抓取模块已经完整。
 
-The crawler still requires:
+抓取层还必须补齐：
 
-- provider abstraction
-- session management
-- timeout handling
-- retry policy
-- health checking
-- failure classification
+- 代理提供器抽象
+- session 管理
+- 超时处理
+- 重试策略
+- 健康检查
+- 失败分类
 
-The app should expose a provider-facing abstraction such as `ProxyProvider`, while the fetcher consumes only the abstraction.
+应用层应该暴露类似 `ProxyProvider` 的抽象，抓取器只依赖这个抽象，不直接依赖某一家代理服务商的参数形式。
 
-## 10. Reliability and Failure Handling
+## 10. 可靠性与异常处理
 
-V1 must handle the following failure categories.
+第一版必须处理下面几类问题。
 
-### 10.1 Fetch failure
+### 10.1 抓取失败
 
-Examples:
+示例：
 
-- proxy connect failure
-- proxy auth failure
-- timeout
-- target rejection
+- 代理连接失败
+- 代理认证失败
+- 超时
+- 目标站拒绝访问
 
-Behavior:
+要求：
 
-- log reason
-- retry when appropriate
-- switch proxy/session when appropriate
-- avoid blocking unrelated jobs
+- 记录错误原因
+- 在适合的情况下重试
+- 在适合的情况下切换代理或 session
+- 单个任务失败不能阻塞其他抓取任务
 
-### 10.2 Duplicate fetches
+### 10.2 重复抓取
 
-Behavior:
+要求：
 
-- deduplicate by account plus post ID
-- keep ingestion idempotent across reruns
+- 按账号 + 帖子 ID 做幂等去重
+- 重跑任务不应重复生成帖子记录
 
-### 10.3 Translation failure
+### 10.3 翻译失败
 
-Behavior:
+要求：
 
-- keep original post visible
-- mark translation as pending, failed, or retrying
-- allow retry without re-fetching the post
+- 原文照常展示
+- 翻译状态标记为处理中、失败或待重试
+- 支持不重新抓取原帖的前提下重试翻译
 
-### 10.4 Source adapter replacement
+### 10.4 数据源切换
 
-Behavior:
+要求：
 
-- front end, storage, and scheduler should not care which adapter is in use
+- 前台、存储层、调度层不关心当前使用哪个抓取适配器
 
-### 10.5 Invalid admin configuration
+### 10.5 后台配置错误
 
-Behavior:
+要求：
 
-- validate intervals, concurrency, timeout, and proxy formats
-- reject obviously unsafe or malformed values
+- 对抓取频率、并发、超时、代理格式等关键参数做校验
+- 拒绝明显错误或危险值
 
-## 11. Testing Scope
+## 11. 测试范围
 
-### 11.1 Unit tests
+### 11.1 单元测试
 
-- proxy config parsing
-- normalized fetch result mapping
-- deduplication logic
-- translation state transitions
+- 代理配置解析
+- 抓取结果标准化
+- 去重逻辑
+- 翻译状态流转
 
-### 11.2 Integration tests
+### 11.2 集成测试
 
-- scheduler to fetch to storage pipeline
-- translation job execution
-- retry behavior when proxy fails
+- 调度器到抓取到入库的完整链路
+- 翻译任务执行
+- 代理失败时的重试逻辑
 
-### 11.3 UI validation
+### 11.3 界面验证
 
-- real-time feed ordering
-- group/account/time filters
-- daily summary correctness
-- status page visibility of failures
+- 实时流按时间倒序
+- 分组/账号/时间筛选正确
+- 今日汇总内容正确
+- 状态页能看见失败记录
 
-### 11.4 Runtime validation
+### 11.4 运行验证
 
-- server process stays up on cloud deployment
-- scheduler recovers after restart
-- recent crawl state is visible
-- logs are enough to diagnose failures
+- 云服务器部署后进程常驻
+- 调度器重启后可恢复
+- 最近抓取状态对用户可见
+- 日志足以辅助定位问题
 
-## 12. Success Criteria
+## 12. 成功标准
 
-V1 is successful when:
+第一版成功的标准是：
 
-- the user can manage X accounts and groups in the web admin
-- the system can regularly fetch new original posts from those accounts
-- the homepage reliably shows English original text and Chinese translation
-- the daily summary page shows same-day content correctly
-- the status page makes operational problems visible
+- 用户可以在网页后台管理 X 账号和分组
+- 系统可以定时抓取这些账号的新原创帖
+- 首页能稳定展示英文原文和中文翻译
+- 今日汇总页能正确展示当天内容
+- 系统状态页能让用户快速定位大致问题
 
-## 13. Open Follow-up After V1
+## 13. 后续增强方向
 
-The following are valid next-stage enhancements, but intentionally excluded from v1:
+下列能力适合作为下一阶段增强，但明确不放入第一版：
 
-- AI filtering
-- importance scoring
-- tagging
-- quote/reply/repost ingestion
-- notification delivery
-- richer analytics
-- multiple source providers active in parallel
+- AI 内容筛选
+- 重要性评分
+- 标签体系
+- 引用帖/回复/转推抓取
+- 推送分发
+- 更丰富的数据分析
+- 并行启用多个抓取源
 
-## 14. Constraints and Notes
+## 14. 约束与说明
 
-- X built-in translation should not be treated as a stable fetchable field.
-- Translation should be implemented by the system itself.
-- The workspace is currently not a Git repository, so this spec cannot be committed until version control is initialized.
+- 不能把 X 内置翻译视为稳定可抓取字段。
+- 中文翻译由系统自己完成。
+- 当前实现计划已经切换到 Next.js + Tailwind CSS + TypeScript 技术栈，后续开发以实现计划为准。

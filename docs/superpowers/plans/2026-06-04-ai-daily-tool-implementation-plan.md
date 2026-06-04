@@ -1,1002 +1,974 @@
-# AI Early Brief Tool Implementation Plan
+# AI 早报工具实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a personal web-based X AI news reader that fetches original posts from configured accounts, stores them, translates them into Chinese, and presents them in a real-time feed plus same-day summary.
+**目标：** 构建一个个人使用的 AI 早报工具，基于 X 账号白名单抓取原创内容，保存原文，生成中文翻译，并通过网页提供实时流、今日汇总和后台配置能力。
 
-**Architecture:** Use a Django monolith with focused Django apps for accounts, crawling, posts, translation, and UI. Run background work with Celery and Redis, persist primary data in PostgreSQL, and keep the X fetch path replaceable behind source-adapter interfaces while proxy handling stays isolated in the crawler app.
+**架构：** 使用 Next.js App Router 作为主应用，前台页面、后台配置页和 API Route 全部放在同一项目中。抓取调度与翻译任务通过独立的服务层和定时入口执行，主数据存储在 PostgreSQL，队列与缓存使用 Redis，抓取源通过适配器接口隔离，代理池能力通过独立模块管理。
 
-**Tech Stack:** Python 3.12, Django 5, Django templates, PostgreSQL, Redis, Celery, pytest, Playwright, Ruff
+**技术栈：** Next.js 15、React 19、TypeScript、Tailwind CSS、PostgreSQL、Prisma、Redis、BullMQ、Vitest、Playwright、ESLint
 
 ---
 
-## File Structure
+## 文件结构
 
-The implementation should create this structure and keep file responsibilities narrow:
+实现阶段应建立如下结构，并保持每个文件职责单一：
 
-- `pyproject.toml`
-  - Python dependencies, Ruff config, pytest config
+- `package.json`
+  - 依赖、脚本命令
+- `tsconfig.json`
+  - TypeScript 配置
+- `next.config.ts`
+  - Next.js 配置
+- `postcss.config.mjs`
+  - Tailwind 构建配置
+- `eslint.config.mjs`
+  - 代码规范配置
 - `.env.example`
-  - Local environment variable template
+  - 本地环境变量模板
 - `README.md`
-  - Setup and run instructions
-- `manage.py`
-  - Django entrypoint
-- `config/settings.py`
-  - Shared Django settings
-- `config/urls.py`
-  - Root URL routing
-- `config/celery.py`
-  - Celery app wiring
-- `apps/accounts/models.py`
-  - Source accounts and account groups
-- `apps/accounts/admin.py`
-  - Admin registration for account configuration
-- `apps/crawler/models.py`
-  - Crawl runs and fetch settings snapshots
-- `apps/crawler/proxy.py`
-  - ProxyProvider and ProxySessionManager abstractions
-- `apps/crawler/source_adapters/base.py`
-  - Source-adapter interface
-- `apps/crawler/source_adapters/mock.py`
-  - Mock adapter for TDD and local development
-- `apps/crawler/services.py`
-  - Crawl orchestration logic
-- `apps/crawler/tasks.py`
-  - Celery crawl tasks
-- `apps/posts/models.py`
-  - Raw post storage
-- `apps/posts/services.py`
-  - Deduplication and post creation logic
-- `apps/translation/models.py`
-  - Translation record state
-- `apps/translation/services.py`
-  - Translation client and translation workflow
-- `apps/translation/tasks.py`
-  - Celery translation tasks
-- `apps/ui/views.py`
-  - Real-time feed, daily summary, and status views
-- `apps/ui/urls.py`
-  - UI routes
-- `templates/ui/feed.html`
-  - Real-time feed page
-- `templates/ui/daily_summary.html`
-  - Same-day summary page
-- `templates/ui/status.html`
-  - System status page
-- `tests/accounts/test_models.py`
-  - Accounts model coverage
-- `tests/posts/test_services.py`
-  - Deduplication and post creation coverage
-- `tests/crawler/test_proxy.py`
-  - Proxy configuration parsing and session behavior
-- `tests/crawler/test_services.py`
-  - Crawl orchestration coverage
-- `tests/translation/test_services.py`
-  - Translation state and workflow coverage
-- `tests/ui/test_views.py`
-  - View and filter behavior coverage
-- `tests/e2e/test_reader_flow.py`
-  - Browser-level validation for the main reading flow
+  - 安装、启动、部署说明
+- `prisma/schema.prisma`
+  - 数据模型定义
+- `src/app/layout.tsx`
+  - 全局布局
+- `src/app/globals.css`
+  - Tailwind 导入和全局样式变量
+- `src/app/page.tsx`
+  - 实时流页面
+- `src/app/daily/page.tsx`
+  - 今日汇总页面
+- `src/app/status/page.tsx`
+  - 系统状态页面
+- `src/app/admin/accounts/page.tsx`
+  - 账号管理页
+- `src/app/admin/groups/page.tsx`
+  - 分组管理页
+- `src/app/admin/settings/page.tsx`
+  - 抓取、代理、翻译设置页
+- `src/app/api/accounts/route.ts`
+  - 账号接口
+- `src/app/api/groups/route.ts`
+  - 分组接口
+- `src/app/api/crawl/run/route.ts`
+  - 手动触发抓取接口
+- `src/app/api/settings/route.ts`
+  - 系统设置接口
+- `src/lib/db.ts`
+  - Prisma Client 单例
+- `src/lib/env.ts`
+  - 环境变量读取与校验
+- `src/lib/time.ts`
+  - 时间窗口工具函数
+- `src/modules/accounts/types.ts`
+  - 账号域类型定义
+- `src/modules/accounts/service.ts`
+  - 账号和分组读写逻辑
+- `src/modules/posts/types.ts`
+  - 原始帖子类型
+- `src/modules/posts/service.ts`
+  - 原始帖子入库和查询逻辑
+- `src/modules/crawler/proxy-provider.ts`
+  - 代理提供器和 URL 组装逻辑
+- `src/modules/crawler/proxy-session-manager.ts`
+  - 代理 session 管理
+- `src/modules/crawler/source-adapters/base.ts`
+  - 抓取源接口
+- `src/modules/crawler/source-adapters/mock.ts`
+  - Mock 抓取源
+- `src/modules/crawler/service.ts`
+  - 抓取编排逻辑
+- `src/modules/crawler/scheduler.ts`
+  - 定时任务入口
+- `src/modules/translation/service.ts`
+  - 翻译逻辑
+- `src/modules/translation/queue.ts`
+  - 翻译任务入队与消费
+- `src/components/feed/post-card.tsx`
+  - 实时流卡片
+- `src/components/feed/filter-bar.tsx`
+  - 筛选条
+- `src/components/admin/account-form.tsx`
+  - 账号表单
+- `src/components/admin/group-form.tsx`
+  - 分组表单
+- `src/components/admin/settings-form.tsx`
+  - 设置表单
+- `tests/unit/accounts.service.test.ts`
+  - 账号服务单测
+- `tests/unit/posts.service.test.ts`
+  - 帖子去重和入库单测
+- `tests/unit/proxy-provider.test.ts`
+  - 代理 URL 和 session 单测
+- `tests/unit/crawler.service.test.ts`
+  - 抓取编排单测
+- `tests/unit/translation.service.test.ts`
+  - 翻译流程单测
+- `tests/integration/api.accounts.test.ts`
+  - 账号接口集成测试
+- `tests/integration/api.settings.test.ts`
+  - 设置接口集成测试
+- `tests/e2e/reader-flow.spec.ts`
+  - 前台阅读流程端到端测试
+- `tests/e2e/admin-flow.spec.ts`
+  - 后台配置流程端到端测试
 
-## Task 1: Bootstrap Repository and Tooling
+## Task 1：初始化 Next.js + TypeScript + Tailwind 项目骨架
 
 **Files:**
-- Create: `pyproject.toml`
+- Create: `package.json`
+- Create: `tsconfig.json`
+- Create: `next.config.ts`
+- Create: `postcss.config.mjs`
+- Create: `eslint.config.mjs`
+- Create: `src/app/layout.tsx`
+- Create: `src/app/globals.css`
+- Create: `tests/unit/smoke.test.ts`
+- Test: `tests/unit/smoke.test.ts`
+
+- [ ] **Step 1: 先写失败测试**
+
+```ts
+// tests/unit/smoke.test.ts
+import { describe, expect, it } from "vitest";
+
+describe("project scaffold", () => {
+  it("defines the app name", async () => {
+    const pkg = await import("../../package.json");
+    expect(pkg.name).toBe("xfetcher");
+  });
+});
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `npm run test -- tests/unit/smoke.test.ts`
+Expected: FAIL，因为 `package.json` 和测试命令还不存在。
+
+- [ ] **Step 3: 写最小项目骨架**
+
+```json
+// package.json
+{
+  "name": "xfetcher",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
+```
+
+```tsx
+// src/app/layout.tsx
+import "./globals.css";
+import type { ReactNode } from "react";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="zh-CN">
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+```css
+/* src/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f6f1e8;
+  --fg: #1f1d1a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+Run: `npm run test -- tests/unit/smoke.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add package.json tsconfig.json next.config.ts postcss.config.mjs eslint.config.mjs src/app tests/unit/smoke.test.ts
+git commit -m "chore: bootstrap nextjs app"
+```
+
+## Task 2：建立数据库模型和 Prisma 基础设施
+
+**Files:**
+- Create: `prisma/schema.prisma`
+- Create: `src/lib/db.ts`
 - Create: `.env.example`
-- Create: `README.md`
-- Create: `manage.py`
-- Create: `config/__init__.py`
-- Create: `config/settings.py`
-- Create: `config/urls.py`
-- Create: `config/celery.py`
-- Create: `apps/__init__.py`
-- Create: `apps/accounts/__init__.py`
-- Create: `apps/crawler/__init__.py`
-- Create: `apps/posts/__init__.py`
-- Create: `apps/translation/__init__.py`
-- Create: `apps/ui/__init__.py`
-- Test: `python -m pytest`
+- Create: `tests/unit/schema-shape.test.ts`
+- Test: `tests/unit/schema-shape.test.ts`
 
-- [ ] **Step 1: Write the failing smoke test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-# tests/test_smoke.py
-from django.conf import settings
+```ts
+// tests/unit/schema-shape.test.ts
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
-
-def test_installed_apps_include_project_apps():
-    assert "apps.accounts" in settings.INSTALLED_APPS
-    assert "apps.crawler" in settings.INSTALLED_APPS
-    assert "apps.posts" in settings.INSTALLED_APPS
-    assert "apps.translation" in settings.INSTALLED_APPS
-    assert "apps.ui" in settings.INSTALLED_APPS
+describe("prisma schema", () => {
+  it("contains source account model", () => {
+    const schema = readFileSync("prisma/schema.prisma", "utf8");
+    expect(schema).toContain("model SourceAccount");
+    expect(schema).toContain("model AccountGroup");
+    expect(schema).toContain("model RawPost");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/test_smoke.py -v`
-Expected: FAIL with import or Django settings initialization errors because the project files do not exist yet.
+Run: `npm run test -- tests/unit/schema-shape.test.ts`
+Expected: FAIL，因为 `prisma/schema.prisma` 不存在。
 
-- [ ] **Step 3: Write the minimal project scaffold**
+- [ ] **Step 3: 写最小 Prisma 结构**
 
-```toml
-# pyproject.toml
-[project]
-name = "xfetcher"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-  "Django>=5.0,<6.0",
-  "psycopg[binary]>=3.1",
-  "celery>=5.4",
-  "redis>=5.0",
-  "python-dotenv>=1.0",
-]
+```prisma
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
 
-[project.optional-dependencies]
-dev = [
-  "pytest>=8.0",
-  "pytest-django>=4.8",
-  "playwright>=1.45",
-  "ruff>=0.5",
-]
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
 
-[tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
-python_files = ["test_*.py", "*_test.py"]
+model AccountGroup {
+  id                   String          @id @default(cuid())
+  name                 String          @unique
+  description          String          @default("")
+  defaultFetchInterval Int             @default(300)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  accounts             SourceAccount[]
+}
+
+model SourceAccount {
+  id          String      @id @default(cuid())
+  xHandle     String      @unique
+  displayName String
+  enabled     Boolean     @default(true)
+  groupId     String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  group       AccountGroup @relation(fields: [groupId], references: [id])
+  rawPosts    RawPost[]
+  crawlRuns   CrawlRun[]
+}
+
+model RawPost {
+  id               String   @id @default(cuid())
+  sourceAccountId  String
+  externalPostId   String
+  originalText     String
+  originalLanguage String
+  postedAt         DateTime
+  fetchedAt        DateTime @default(now())
+  sourceType       String
+  rawPayload       Json
+  sourceAccount    SourceAccount @relation(fields: [sourceAccountId], references: [id])
+  translation      PostTranslation?
+
+  @@unique([sourceAccountId, externalPostId])
+}
+
+model PostTranslation {
+  id               String   @id @default(cuid())
+  rawPostId        String   @unique
+  translatedTextZh String   @default("")
+  status           String   @default("pending")
+  errorMessage     String   @default("")
+  modelName        String   @default("mock-translator")
+  modelVersion     String   @default("v1")
+  translatedAt     DateTime?
+  rawPost          RawPost  @relation(fields: [rawPostId], references: [id])
+}
+
+model CrawlRun {
+  id                     String   @id @default(cuid())
+  sourceAccountId        String
+  status                 String
+  fetchedCount           Int      @default(0)
+  insertedCount          Int      @default(0)
+  failedCount            Int      @default(0)
+  proxySessionIdentifier String   @default("")
+  errorSummary           String   @default("")
+  startedAt              DateTime @default(now())
+  finishedAt             DateTime?
+  sourceAccount          SourceAccount @relation(fields: [sourceAccountId], references: [id])
+}
 ```
 
-```python
-# config/settings.py
-from pathlib import Path
+```ts
+// src/lib/db.ts
+import { PrismaClient } from "@prisma/client";
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = "dev-secret-key"
-DEBUG = True
-ALLOWED_HOSTS = ["*"]
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "apps.accounts",
-    "apps.crawler",
-    "apps.posts",
-    "apps.translation",
-    "apps.ui",
-]
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: ["error", "warn"],
+  });
 
-MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-]
-
-ROOT_URLCONF = "config.urls"
-STATIC_URL = "/static/"
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = db;
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/test_smoke.py -v`
+Run: `npm run test -- tests/unit/schema-shape.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add pyproject.toml .env.example README.md manage.py config apps tests/test_smoke.py
-git commit -m "chore: bootstrap django project"
+git add prisma/schema.prisma src/lib/db.ts .env.example tests/unit/schema-shape.test.ts
+git commit -m "feat: add prisma schema"
 ```
 
-## Task 2: Model Account Groups and Source Accounts
+## Task 3：实现账号和分组服务
 
 **Files:**
-- Create: `apps/accounts/apps.py`
-- Create: `apps/accounts/models.py`
-- Create: `apps/accounts/admin.py`
-- Create: `tests/accounts/test_models.py`
-- Modify: `config/settings.py`
-- Test: `tests/accounts/test_models.py`
+- Create: `src/modules/accounts/types.ts`
+- Create: `src/modules/accounts/service.ts`
+- Create: `tests/unit/accounts.service.test.ts`
+- Test: `tests/unit/accounts.service.test.ts`
 
-- [ ] **Step 1: Write the failing model test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from apps.accounts.models import AccountGroup, SourceAccount
+```ts
+// tests/unit/accounts.service.test.ts
+import { describe, expect, it } from "vitest";
+import { normalizeHandle } from "../../src/modules/accounts/service";
 
-
-def test_source_account_string_representation(db):
-    group = AccountGroup.objects.create(name="labs", description="Model labs", default_fetch_interval=300)
-    account = SourceAccount.objects.create(
-        x_handle="openai",
-        display_name="OpenAI",
-        group=group,
-        enabled=True,
-    )
-
-    assert str(account) == "@openai (labs)"
+describe("normalizeHandle", () => {
+  it("removes @ prefix and trims spaces", () => {
+    expect(normalizeHandle("  @OpenAI  ")).toBe("OpenAI");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/accounts/test_models.py::test_source_account_string_representation -v`
-Expected: FAIL because the models do not exist.
+Run: `npm run test -- tests/unit/accounts.service.test.ts`
+Expected: FAIL，因为 `src/modules/accounts/service.ts` 不存在。
 
-- [ ] **Step 3: Write the minimal models and admin registration**
+- [ ] **Step 3: 写最小服务实现**
 
-```python
-# apps/accounts/models.py
-from django.db import models
-
-
-class AccountGroup(models.Model):
-    name = models.CharField(max_length=64, unique=True)
-    description = models.CharField(max_length=255, blank=True)
-    default_fetch_interval = models.PositiveIntegerField(default=300)
-
-    def __str__(self) -> str:
-        return self.name
-
-
-class SourceAccount(models.Model):
-    x_handle = models.CharField(max_length=64, unique=True)
-    display_name = models.CharField(max_length=128)
-    group = models.ForeignKey(AccountGroup, on_delete=models.CASCADE, related_name="accounts")
-    enabled = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self) -> str:
-        return f"@{self.x_handle} ({self.group.name})"
+```ts
+// src/modules/accounts/service.ts
+export function normalizeHandle(input: string): string {
+  return input.trim().replace(/^@/, "");
+}
 ```
 
-```python
-# apps/accounts/admin.py
-from django.contrib import admin
-from apps.accounts.models import AccountGroup, SourceAccount
+```ts
+// src/modules/accounts/types.ts
+export type AccountGroupInput = {
+  name: string;
+  description: string;
+  defaultFetchInterval: number;
+};
 
-admin.site.register(AccountGroup)
-admin.site.register(SourceAccount)
+export type SourceAccountInput = {
+  xHandle: string;
+  displayName: string;
+  groupId: string;
+  enabled: boolean;
+};
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/accounts/test_models.py -v`
+Run: `npm run test -- tests/unit/accounts.service.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/accounts config/settings.py tests/accounts/test_models.py
-git commit -m "feat: add account and group models"
+git add src/modules/accounts tests/unit/accounts.service.test.ts
+git commit -m "feat: add account service primitives"
 ```
 
-## Task 3: Model Raw Posts and Deduplication
+## Task 4：实现原始帖子去重入库逻辑
 
 **Files:**
-- Create: `apps/posts/apps.py`
-- Create: `apps/posts/models.py`
-- Create: `apps/posts/services.py`
-- Create: `tests/posts/test_services.py`
-- Test: `tests/posts/test_services.py`
+- Create: `src/modules/posts/types.ts`
+- Create: `src/modules/posts/service.ts`
+- Create: `tests/unit/posts.service.test.ts`
+- Test: `tests/unit/posts.service.test.ts`
 
-- [ ] **Step 1: Write the failing service test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from apps.accounts.models import AccountGroup, SourceAccount
-from apps.posts.models import RawPost
-from apps.posts.services import store_raw_post
+```ts
+// tests/unit/posts.service.test.ts
+import { describe, expect, it } from "vitest";
+import { buildRawPostUniqueKey } from "../../src/modules/posts/service";
 
-
-def test_store_raw_post_is_idempotent(db):
-    group = AccountGroup.objects.create(name="labs", default_fetch_interval=300)
-    account = SourceAccount.objects.create(x_handle="openai", display_name="OpenAI", group=group)
-
-    payload = {
-        "external_post_id": "123",
-        "original_text": "GPT update",
-        "original_language": "en",
-        "posted_at": "2026-06-04T12:00:00Z",
-        "source_type": "mock",
-        "raw_payload": {"id": "123"},
-    }
-
-    first = store_raw_post(account=account, payload=payload)
-    second = store_raw_post(account=account, payload=payload)
-
-    assert first.id == second.id
-    assert RawPost.objects.count() == 1
+describe("buildRawPostUniqueKey", () => {
+  it("combines account id and external post id", () => {
+    expect(buildRawPostUniqueKey("acc_1", "post_2")).toBe("acc_1:post_2");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/posts/test_services.py::test_store_raw_post_is_idempotent -v`
-Expected: FAIL because the post model and service do not exist.
+Run: `npm run test -- tests/unit/posts.service.test.ts`
+Expected: FAIL，因为帖子服务文件不存在。
 
-- [ ] **Step 3: Write the minimal model and service**
+- [ ] **Step 3: 写最小帖子服务**
 
-```python
-# apps/posts/models.py
-from django.db import models
-from apps.accounts.models import SourceAccount
-
-
-class RawPost(models.Model):
-    source_account = models.ForeignKey(SourceAccount, on_delete=models.CASCADE, related_name="raw_posts")
-    external_post_id = models.CharField(max_length=128)
-    original_text = models.TextField()
-    original_language = models.CharField(max_length=16, blank=True)
-    posted_at = models.DateTimeField()
-    fetched_at = models.DateTimeField(auto_now_add=True)
-    source_type = models.CharField(max_length=32)
-    raw_payload = models.JSONField(default=dict)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["source_account", "external_post_id"],
-                name="uniq_source_account_external_post",
-            )
-        ]
+```ts
+// src/modules/posts/types.ts
+export type RawPostInput = {
+  sourceAccountId: string;
+  externalPostId: string;
+  originalText: string;
+  originalLanguage: string;
+  postedAt: string;
+  sourceType: string;
+  rawPayload: Record<string, unknown>;
+};
 ```
 
-```python
-# apps/posts/services.py
-from django.utils.dateparse import parse_datetime
-from apps.posts.models import RawPost
-
-
-def store_raw_post(account, payload):
-    post, _ = RawPost.objects.get_or_create(
-        source_account=account,
-        external_post_id=payload["external_post_id"],
-        defaults={
-            "original_text": payload["original_text"],
-            "original_language": payload["original_language"],
-            "posted_at": parse_datetime(payload["posted_at"]),
-            "source_type": payload["source_type"],
-            "raw_payload": payload["raw_payload"],
-        },
-    )
-    return post
+```ts
+// src/modules/posts/service.ts
+export function buildRawPostUniqueKey(sourceAccountId: string, externalPostId: string): string {
+  return `${sourceAccountId}:${externalPostId}`;
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/posts/test_services.py -v`
+Run: `npm run test -- tests/unit/posts.service.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/posts tests/posts/test_services.py
-git commit -m "feat: add raw post storage"
+git add src/modules/posts tests/unit/posts.service.test.ts
+git commit -m "feat: add raw post service primitives"
 ```
 
-## Task 4: Add Proxy Abstraction and Source Adapter Interface
+## Task 5：实现代理提供器和抓取源接口
 
 **Files:**
-- Create: `apps/crawler/apps.py`
-- Create: `apps/crawler/proxy.py`
-- Create: `apps/crawler/source_adapters/base.py`
-- Create: `apps/crawler/source_adapters/mock.py`
-- Create: `tests/crawler/test_proxy.py`
-- Test: `tests/crawler/test_proxy.py`
+- Create: `src/modules/crawler/proxy-provider.ts`
+- Create: `src/modules/crawler/proxy-session-manager.ts`
+- Create: `src/modules/crawler/source-adapters/base.ts`
+- Create: `src/modules/crawler/source-adapters/mock.ts`
+- Create: `tests/unit/proxy-provider.test.ts`
+- Test: `tests/unit/proxy-provider.test.ts`
 
-- [ ] **Step 1: Write the failing proxy test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from apps.crawler.proxy import ProxyProvider
+```ts
+// tests/unit/proxy-provider.test.ts
+import { describe, expect, it } from "vitest";
+import { buildProxyUrl } from "../../src/modules/crawler/proxy-provider";
 
-
-def test_proxy_provider_builds_authenticated_proxy_url():
-    provider = ProxyProvider(
-        scheme="http",
-        host="542cd09n.pr.thordata.net",
-        port=9999,
-        username="td-customer-demo",
-        password="secret",
-    )
-
-    assert provider.as_url() == "http://td-customer-demo:secret@542cd09n.pr.thordata.net:9999"
+describe("buildProxyUrl", () => {
+  it("builds authenticated proxy url", () => {
+    expect(
+      buildProxyUrl({
+        scheme: "http",
+        host: "542cd09n.pr.thordata.net",
+        port: 9999,
+        username: "td-customer-demo",
+        password: "secret",
+      }),
+    ).toBe("http://td-customer-demo:secret@542cd09n.pr.thordata.net:9999");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/crawler/test_proxy.py::test_proxy_provider_builds_authenticated_proxy_url -v`
-Expected: FAIL because the proxy module does not exist.
+Run: `npm run test -- tests/unit/proxy-provider.test.ts`
+Expected: FAIL，因为代理模块不存在。
 
-- [ ] **Step 3: Write the minimal proxy and adapter interfaces**
+- [ ] **Step 3: 写最小代理与适配器接口**
 
-```python
-# apps/crawler/proxy.py
-from dataclasses import dataclass
+```ts
+// src/modules/crawler/proxy-provider.ts
+export type ProxyConfig = {
+  scheme: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+};
 
-
-@dataclass(slots=True)
-class ProxyProvider:
-    scheme: str
-    host: str
-    port: int
-    username: str
-    password: str
-
-    def as_url(self) -> str:
-        return f"{self.scheme}://{self.username}:{self.password}@{self.host}:{self.port}"
+export function buildProxyUrl(config: ProxyConfig): string {
+  return `${config.scheme}://${config.username}:${config.password}@${config.host}:${config.port}`;
+}
 ```
 
-```python
-# apps/crawler/source_adapters/base.py
-from abc import ABC, abstractmethod
+```ts
+// src/modules/crawler/source-adapters/base.ts
+export type FetchOriginalPostsInput = {
+  accountHandle: string;
+  proxyUrl?: string;
+};
 
+export type FetchedPost = {
+  externalPostId: string;
+  originalText: string;
+  originalLanguage: string;
+  postedAt: string;
+  sourceType: string;
+  rawPayload: Record<string, unknown>;
+};
 
-class BaseSourceAdapter(ABC):
-    source_type = "base"
-
-    @abstractmethod
-    def fetch_original_posts(self, account_handle: str, proxy_url: str | None = None) -> list[dict]:
-        raise NotImplementedError
+export interface SourceAdapter {
+  sourceType: string;
+  fetchOriginalPosts(input: FetchOriginalPostsInput): Promise<FetchedPost[]>;
+}
 ```
 
-```python
-# apps/crawler/source_adapters/mock.py
-from apps.crawler.source_adapters.base import BaseSourceAdapter
+```ts
+// src/modules/crawler/source-adapters/mock.ts
+import type { FetchedPost, FetchOriginalPostsInput, SourceAdapter } from "./base";
 
+export class MockSourceAdapter implements SourceAdapter {
+  sourceType = "mock";
 
-class MockSourceAdapter(BaseSourceAdapter):
-    source_type = "mock"
-
-    def fetch_original_posts(self, account_handle: str, proxy_url: str | None = None) -> list[dict]:
-        return [
-            {
-                "external_post_id": f"{account_handle}-001",
-                "original_text": f"Latest update from {account_handle}",
-                "original_language": "en",
-                "posted_at": "2026-06-04T12:00:00Z",
-                "source_type": self.source_type,
-                "raw_payload": {"account_handle": account_handle, "proxy_url": proxy_url},
-            }
-        ]
+  async fetchOriginalPosts(input: FetchOriginalPostsInput): Promise<FetchedPost[]> {
+    return [
+      {
+        externalPostId: `${input.accountHandle}-001`,
+        originalText: `Latest update from ${input.accountHandle}`,
+        originalLanguage: "en",
+        postedAt: "2026-06-04T12:00:00.000Z",
+        sourceType: this.sourceType,
+        rawPayload: input,
+      },
+    ];
+  }
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/crawler/test_proxy.py -v`
+Run: `npm run test -- tests/unit/proxy-provider.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/crawler tests/crawler/test_proxy.py
-git commit -m "feat: add proxy and source adapter interfaces"
+git add src/modules/crawler tests/unit/proxy-provider.test.ts
+git commit -m "feat: add proxy and source adapter primitives"
 ```
 
-## Task 5: Implement Crawl Run Tracking and Crawl Orchestration
+## Task 6：实现抓取编排和抓取记录
 
 **Files:**
-- Create: `apps/crawler/models.py`
-- Create: `apps/crawler/services.py`
-- Create: `tests/crawler/test_services.py`
-- Modify: `apps/posts/services.py`
-- Test: `tests/crawler/test_services.py`
+- Create: `src/modules/crawler/service.ts`
+- Create: `tests/unit/crawler.service.test.ts`
+- Modify: `src/modules/posts/service.ts`
+- Test: `tests/unit/crawler.service.test.ts`
 
-- [ ] **Step 1: Write the failing crawl service test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from apps.accounts.models import AccountGroup, SourceAccount
-from apps.crawler.services import crawl_account
-from apps.posts.models import RawPost
+```ts
+// tests/unit/crawler.service.test.ts
+import { describe, expect, it } from "vitest";
+import { countInsertedPosts } from "../../src/modules/crawler/service";
 
-
-def test_crawl_account_persists_posts_and_run_record(db):
-    group = AccountGroup.objects.create(name="labs", default_fetch_interval=300)
-    account = SourceAccount.objects.create(x_handle="openai", display_name="OpenAI", group=group)
-
-    result = crawl_account(account=account)
-
-    assert result.status == "success"
-    assert result.inserted_count == 1
-    assert RawPost.objects.count() == 1
+describe("countInsertedPosts", () => {
+  it("counts only newly inserted posts", () => {
+    expect(countInsertedPosts([true, false, true])).toBe(2);
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/crawler/test_services.py::test_crawl_account_persists_posts_and_run_record -v`
-Expected: FAIL because crawl services and run models do not exist.
+Run: `npm run test -- tests/unit/crawler.service.test.ts`
+Expected: FAIL，因为抓取编排服务不存在。
 
-- [ ] **Step 3: Write the minimal crawl model and service**
+- [ ] **Step 3: 写最小编排逻辑**
 
-```python
-# apps/crawler/models.py
-from django.db import models
-from apps.accounts.models import SourceAccount
-
-
-class CrawlRun(models.Model):
-    STATUS_CHOICES = [("success", "success"), ("failed", "failed")]
-
-    source_account = models.ForeignKey(SourceAccount, on_delete=models.CASCADE, related_name="crawl_runs")
-    status = models.CharField(max_length=16, choices=STATUS_CHOICES)
-    fetched_count = models.PositiveIntegerField(default=0)
-    inserted_count = models.PositiveIntegerField(default=0)
-    failed_count = models.PositiveIntegerField(default=0)
-    proxy_session_identifier = models.CharField(max_length=255, blank=True)
-    error_summary = models.TextField(blank=True)
-    started_at = models.DateTimeField(auto_now_add=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
+```ts
+// src/modules/crawler/service.ts
+export function countInsertedPosts(results: boolean[]): number {
+  return results.filter(Boolean).length;
+}
 ```
 
-```python
-# apps/crawler/services.py
-from django.utils import timezone
-from apps.crawler.models import CrawlRun
-from apps.crawler.proxy import ProxyProvider
-from apps.crawler.source_adapters.mock import MockSourceAdapter
-from apps.posts.services import store_raw_post
+- [ ] **Step 4: 运行测试确认通过**
 
-
-def crawl_account(account):
-    run = CrawlRun.objects.create(source_account=account, status="success")
-    adapter = MockSourceAdapter()
-    proxy = ProxyProvider("http", "localhost", 8080, "demo", "demo")
-    items = adapter.fetch_original_posts(account_handle=account.x_handle, proxy_url=proxy.as_url())
-
-    inserted = 0
-    for item in items:
-        before = account.raw_posts.count()
-        store_raw_post(account=account, payload=item)
-        after = account.raw_posts.count()
-        inserted += int(after > before)
-
-    run.fetched_count = len(items)
-    run.inserted_count = inserted
-    run.finished_at = timezone.now()
-    run.save(update_fields=["fetched_count", "inserted_count", "finished_at"])
-    return run
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `python -m pytest tests/crawler/test_services.py -v`
+Run: `npm run test -- tests/unit/crawler.service.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/crawler apps/posts/services.py tests/crawler/test_services.py
-git commit -m "feat: add crawl orchestration"
+git add src/modules/crawler/service.ts tests/unit/crawler.service.test.ts
+git commit -m "feat: add crawl orchestration primitives"
 ```
 
-## Task 6: Add Translation Records and Translation Workflow
+## Task 7：实现翻译服务和任务队列入口
 
 **Files:**
-- Create: `apps/translation/apps.py`
-- Create: `apps/translation/models.py`
-- Create: `apps/translation/services.py`
-- Create: `tests/translation/test_services.py`
-- Test: `tests/translation/test_services.py`
+- Create: `src/modules/translation/service.ts`
+- Create: `src/modules/translation/queue.ts`
+- Create: `tests/unit/translation.service.test.ts`
+- Test: `tests/unit/translation.service.test.ts`
 
-- [ ] **Step 1: Write the failing translation test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from apps.accounts.models import AccountGroup, SourceAccount
-from apps.posts.models import RawPost
-from apps.translation.services import translate_post
+```ts
+// tests/unit/translation.service.test.ts
+import { describe, expect, it } from "vitest";
+import { shouldTranslate } from "../../src/modules/translation/service";
 
-
-def test_translate_post_creates_completed_translation(db):
-    group = AccountGroup.objects.create(name="labs", default_fetch_interval=300)
-    account = SourceAccount.objects.create(x_handle="openai", display_name="OpenAI", group=group)
-    post = RawPost.objects.create(
-        source_account=account,
-        external_post_id="123",
-        original_text="Launch today",
-        original_language="en",
-        posted_at="2026-06-04T12:00:00Z",
-        source_type="mock",
-        raw_payload={"id": "123"},
-    )
-
-    translation = translate_post(post)
-
-    assert translation.status == "completed"
-    assert translation.translated_text_zh == "Launch today"
+describe("shouldTranslate", () => {
+  it("returns true for english posts", () => {
+    expect(shouldTranslate("en")).toBe(true);
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/translation/test_services.py::test_translate_post_creates_completed_translation -v`
-Expected: FAIL because translation files do not exist.
+Run: `npm run test -- tests/unit/translation.service.test.ts`
+Expected: FAIL，因为翻译服务不存在。
 
-- [ ] **Step 3: Write the minimal translation model and service**
+- [ ] **Step 3: 写最小翻译入口**
 
-```python
-# apps/translation/models.py
-from django.db import models
-from apps.posts.models import RawPost
-
-
-class PostTranslation(models.Model):
-    STATUS_CHOICES = [("pending", "pending"), ("completed", "completed"), ("failed", "failed")]
-
-    raw_post = models.OneToOneField(RawPost, on_delete=models.CASCADE, related_name="translation")
-    translated_text_zh = models.TextField(blank=True)
-    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
-    error_message = models.TextField(blank=True)
-    model_name = models.CharField(max_length=64, default="mock-translator")
-    model_version = models.CharField(max_length=64, default="v1")
-    translated_at = models.DateTimeField(null=True, blank=True)
+```ts
+// src/modules/translation/service.ts
+export function shouldTranslate(language: string): boolean {
+  return language.toLowerCase() !== "zh";
+}
 ```
 
-```python
-# apps/translation/services.py
-from django.utils import timezone
-from apps.translation.models import PostTranslation
+```ts
+// src/modules/translation/queue.ts
+export type TranslationJob = {
+  rawPostId: string;
+};
 
-
-def translate_post(post):
-    translation, _ = PostTranslation.objects.get_or_create(raw_post=post)
-    translation.translated_text_zh = post.original_text
-    translation.status = "completed"
-    translation.translated_at = timezone.now()
-    translation.save(update_fields=["translated_text_zh", "status", "translated_at"])
-    return translation
+export function buildTranslationJob(rawPostId: string): TranslationJob {
+  return { rawPostId };
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/translation/test_services.py -v`
+Run: `npm run test -- tests/unit/translation.service.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/translation tests/translation/test_services.py
-git commit -m "feat: add translation workflow"
+git add src/modules/translation tests/unit/translation.service.test.ts
+git commit -m "feat: add translation primitives"
 ```
 
-## Task 7: Add Celery Tasks for Crawl and Translation
+## Task 8：实现前台实时流、今日汇总、状态页
 
 **Files:**
-- Create: `apps/crawler/tasks.py`
-- Create: `apps/translation/tasks.py`
-- Modify: `config/celery.py`
-- Modify: `apps/crawler/services.py`
-- Create: `tests/crawler/test_tasks.py`
-- Test: `tests/crawler/test_tasks.py`
+- Create: `src/components/feed/post-card.tsx`
+- Create: `src/components/feed/filter-bar.tsx`
+- Create: `src/app/page.tsx`
+- Create: `src/app/daily/page.tsx`
+- Create: `src/app/status/page.tsx`
+- Create: `tests/e2e/reader-flow.spec.ts`
+- Test: `tests/e2e/reader-flow.spec.ts`
 
-- [ ] **Step 1: Write the failing task dispatch test**
+- [ ] **Step 1: 先写失败的端到端测试**
 
-```python
-from apps.accounts.models import AccountGroup, SourceAccount
-from apps.crawler.tasks import crawl_account_task
+```ts
+// tests/e2e/reader-flow.spec.ts
+import { test, expect } from "@playwright/test";
 
-
-def test_crawl_account_task_returns_run_id(db):
-    group = AccountGroup.objects.create(name="labs", default_fetch_interval=300)
-    account = SourceAccount.objects.create(x_handle="openai", display_name="OpenAI", group=group)
-
-    run_id = crawl_account_task(account.id)
-
-    assert isinstance(run_id, int)
+test("homepage shows real-time feed heading", async ({ page }) => {
+  await page.goto("http://127.0.0.1:3000");
+  await expect(page.getByRole("heading", { name: "实时流" })).toBeVisible();
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/crawler/test_tasks.py::test_crawl_account_task_returns_run_id -v`
-Expected: FAIL because the task module does not exist.
+Run: `npx playwright test tests/e2e/reader-flow.spec.ts`
+Expected: FAIL，因为首页和 Playwright 环境尚未建立。
 
-- [ ] **Step 3: Write the minimal Celery tasks**
+- [ ] **Step 3: 写最小前台页面**
 
-```python
-# config/celery.py
-import os
-from celery import Celery
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-
-app = Celery("xfetcher")
-app.config_from_object("django.conf:settings", namespace="CELERY")
-app.autodiscover_tasks()
+```tsx
+// src/app/page.tsx
+export default function FeedPage() {
+  return (
+    <main className="mx-auto min-h-screen max-w-5xl px-6 py-10">
+      <h1 className="text-4xl font-semibold">实时流</h1>
+    </main>
+  );
+}
 ```
 
-```python
-# apps/crawler/tasks.py
-from apps.accounts.models import SourceAccount
-from apps.crawler.services import crawl_account
-
-
-def crawl_account_task(account_id: int) -> int:
-    account = SourceAccount.objects.get(id=account_id)
-    run = crawl_account(account=account)
-    return run.id
+```tsx
+// src/app/daily/page.tsx
+export default function DailyPage() {
+  return (
+    <main className="mx-auto min-h-screen max-w-5xl px-6 py-10">
+      <h1 className="text-4xl font-semibold">今日汇总</h1>
+    </main>
+  );
+}
 ```
 
-```python
-# apps/translation/tasks.py
-from apps.posts.models import RawPost
-from apps.translation.services import translate_post
-
-
-def translate_post_task(post_id: int) -> int:
-    post = RawPost.objects.get(id=post_id)
-    translation = translate_post(post)
-    return translation.id
+```tsx
+// src/app/status/page.tsx
+export default function StatusPage() {
+  return (
+    <main className="mx-auto min-h-screen max-w-5xl px-6 py-10">
+      <h1 className="text-4xl font-semibold">系统状态</h1>
+    </main>
+  );
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/crawler/test_tasks.py -v`
+Run: `npx playwright test tests/e2e/reader-flow.spec.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add config/celery.py apps/crawler/tasks.py apps/translation/tasks.py tests/crawler/test_tasks.py
-git commit -m "feat: add background job entrypoints"
-```
-
-## Task 8: Build Reader-Facing Pages
-
-**Files:**
-- Create: `apps/ui/apps.py`
-- Create: `apps/ui/views.py`
-- Create: `apps/ui/urls.py`
-- Create: `templates/ui/feed.html`
-- Create: `templates/ui/daily_summary.html`
-- Create: `templates/ui/status.html`
-- Create: `tests/ui/test_views.py`
-- Modify: `config/urls.py`
-- Test: `tests/ui/test_views.py`
-
-- [ ] **Step 1: Write the failing feed view test**
-
-```python
-from django.urls import reverse
-
-
-def test_feed_page_returns_200(client):
-    response = client.get(reverse("ui:feed"))
-
-    assert response.status_code == 200
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `python -m pytest tests/ui/test_views.py::test_feed_page_returns_200 -v`
-Expected: FAIL because the UI routes and views do not exist.
-
-- [ ] **Step 3: Write the minimal views, routes, and templates**
-
-```python
-# apps/ui/views.py
-from django.shortcuts import render
-from django.utils import timezone
-from apps.crawler.models import CrawlRun
-from apps.posts.models import RawPost
-
-
-def feed(request):
-    posts = RawPost.objects.select_related("source_account").order_by("-posted_at")
-    return render(request, "ui/feed.html", {"posts": posts})
-
-
-def daily_summary(request):
-    today = timezone.now().date()
-    posts = RawPost.objects.filter(posted_at__date=today).select_related("source_account").order_by("-posted_at")
-    return render(request, "ui/daily_summary.html", {"posts": posts, "today": today})
-
-
-def status(request):
-    runs = CrawlRun.objects.select_related("source_account").order_by("-started_at")[:20]
-    return render(request, "ui/status.html", {"runs": runs})
-```
-
-```python
-# apps/ui/urls.py
-from django.urls import path
-from apps.ui import views
-
-app_name = "ui"
-
-urlpatterns = [
-    path("", views.feed, name="feed"),
-    path("daily/", views.daily_summary, name="daily_summary"),
-    path("status/", views.status, name="status"),
-]
-```
-
-```python
-# config/urls.py
-from django.contrib import admin
-from django.urls import include, path
-
-urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("", include("apps.ui.urls")),
-]
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `python -m pytest tests/ui/test_views.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/ui config/urls.py templates/ui tests/ui/test_views.py
+git add src/app src/components tests/e2e/reader-flow.spec.ts
 git commit -m "feat: add reader pages"
 ```
 
-## Task 9: Register Admin Configuration Pages
+## Task 9：实现后台账号、分组、设置页面和 API
 
 **Files:**
-- Modify: `apps/crawler/admin.py`
-- Modify: `apps/translation/admin.py`
-- Create: `tests/ui/test_admin.py`
-- Test: `tests/ui/test_admin.py`
+- Create: `src/app/admin/accounts/page.tsx`
+- Create: `src/app/admin/groups/page.tsx`
+- Create: `src/app/admin/settings/page.tsx`
+- Create: `src/app/api/accounts/route.ts`
+- Create: `src/app/api/groups/route.ts`
+- Create: `src/app/api/settings/route.ts`
+- Create: `src/components/admin/account-form.tsx`
+- Create: `src/components/admin/group-form.tsx`
+- Create: `src/components/admin/settings-form.tsx`
+- Create: `tests/integration/api.accounts.test.ts`
+- Create: `tests/integration/api.settings.test.ts`
+- Create: `tests/e2e/admin-flow.spec.ts`
+- Test: `tests/integration/api.accounts.test.ts`
 
-- [ ] **Step 1: Write the failing admin registration test**
+- [ ] **Step 1: 先写失败的 API 测试**
 
-```python
-from django.contrib import admin
-from apps.accounts.models import AccountGroup, SourceAccount
-from apps.crawler.models import CrawlRun
-from apps.translation.models import PostTranslation
+```ts
+// tests/integration/api.accounts.test.ts
+import { describe, expect, it } from "vitest";
+import { normalizeHandle } from "../../src/modules/accounts/service";
 
-
-def test_models_are_registered_in_admin():
-    registry = admin.site._registry
-
-    assert AccountGroup in registry
-    assert SourceAccount in registry
-    assert CrawlRun in registry
-    assert PostTranslation in registry
+describe("accounts api primitives", () => {
+  it("normalizes account handles before persistence", () => {
+    expect(normalizeHandle("@openai")).toBe("openai");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/ui/test_admin.py::test_models_are_registered_in_admin -v`
-Expected: FAIL because crawler and translation admin registrations do not exist.
+Run: `npm run test -- tests/integration/api.accounts.test.ts`
+Expected: FAIL，因为后台页和 API 尚未落地。
 
-- [ ] **Step 3: Register the remaining admin models**
+- [ ] **Step 3: 写最小后台页面和 API 骨架**
 
-```python
-# apps/crawler/admin.py
-from django.contrib import admin
-from apps.crawler.models import CrawlRun
-
-admin.site.register(CrawlRun)
+```tsx
+// src/app/admin/accounts/page.tsx
+export default function AdminAccountsPage() {
+  return (
+    <main className="mx-auto min-h-screen max-w-5xl px-6 py-10">
+      <h1 className="text-4xl font-semibold">账号管理</h1>
+    </main>
+  );
+}
 ```
 
-```python
-# apps/translation/admin.py
-from django.contrib import admin
-from apps.translation.models import PostTranslation
+```ts
+// src/app/api/accounts/route.ts
+import { NextResponse } from "next/server";
 
-admin.site.register(PostTranslation)
+export async function GET() {
+  return NextResponse.json({ items: [] });
+}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+```ts
+// src/app/api/settings/route.ts
+import { NextResponse } from "next/server";
 
-Run: `python -m pytest tests/ui/test_admin.py -v`
+export async function GET() {
+  return NextResponse.json({
+    fetchInterval: 300,
+    concurrency: 3,
+    translationEnabled: true,
+  });
+}
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+Run: `npm run test -- tests/integration/api.accounts.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add apps/crawler/admin.py apps/translation/admin.py tests/ui/test_admin.py
-git commit -m "feat: register admin configuration models"
+git add src/app/admin src/app/api src/components/admin tests/integration tests/e2e/admin-flow.spec.ts
+git commit -m "feat: add admin pages and api skeletons"
 ```
 
-## Task 10: Add End-to-End Reader Verification and Documentation
+## Task 10：补齐定时入口、环境变量文档和开发说明
 
 **Files:**
-- Create: `tests/e2e/test_reader_flow.py`
+- Create: `src/lib/env.ts`
+- Create: `src/lib/time.ts`
+- Create: `src/modules/crawler/scheduler.ts`
 - Modify: `README.md`
 - Modify: `.env.example`
-- Test: `tests/e2e/test_reader_flow.py`
+- Test: `tests/unit/scheduler.test.ts`
 
-- [ ] **Step 1: Write the failing end-to-end test**
+- [ ] **Step 1: 先写失败测试**
 
-```python
-from playwright.sync_api import Page, expect
+```ts
+// tests/unit/scheduler.test.ts
+import { describe, expect, it } from "vitest";
+import { buildWindowLabel } from "../../src/lib/time";
 
-
-def test_feed_page_shows_heading(page: Page, live_server):
-    page.goto(live_server.url)
-    expect(page).to_have_title("XFetcher")
+describe("buildWindowLabel", () => {
+  it("builds label for 3-hour window", () => {
+    expect(buildWindowLabel(3)).toBe("最近 3 小时");
+  });
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/e2e/test_reader_flow.py::test_feed_page_shows_heading -v`
-Expected: FAIL because the template title and live-server test wiring are not finished yet.
+Run: `npm run test -- tests/unit/scheduler.test.ts`
+Expected: FAIL，因为时间工具和调度入口不存在。
 
-- [ ] **Step 3: Finish the template metadata and documentation**
+- [ ] **Step 3: 写最小时间工具和说明文档**
 
-```html
-<!-- templates/ui/feed.html -->
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>XFetcher</title>
-  </head>
-  <body>
-    <h1>Real-time Feed</h1>
-  </body>
-</html>
+```ts
+// src/lib/time.ts
+export function buildWindowLabel(hours: number): string {
+  return `最近 ${hours} 小时`;
+}
 ```
 
 ```env
 # .env.example
-DJANGO_SECRET_KEY=change-me
-DJANGO_DEBUG=true
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/xfetcher
-REDIS_URL=redis://localhost:6379/0
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xfetcher
+REDIS_URL=redis://localhost:6379
+X_SOURCE_ADAPTER=mock
+PROXY_SCHEME=http
+PROXY_HOST=542cd09n.pr.thordata.net
+PROXY_PORT=9999
+PROXY_USERNAME=td-customer-demo
+PROXY_PASSWORD=replace-me
 ```
 
 ```md
 # README.md
 
-## Local setup
+## 本地开发
 
-1. Create a virtual environment.
-2. Install dependencies with `pip install -e .[dev]`.
-3. Copy `.env.example` to `.env`.
-4. Run migrations with `python manage.py migrate`.
-5. Start Django with `python manage.py runserver`.
-6. Start workers with `celery -A config.celery.app worker --loglevel=info`.
+1. 安装依赖：`npm install`
+2. 复制环境变量：`cp .env.example .env`
+3. 启动数据库和 Redis
+4. 生成 Prisma Client：`npx prisma generate`
+5. 执行迁移：`npx prisma migrate dev`
+6. 启动开发环境：`npm run dev`
+
+## 第一版范围
+
+- 抓取白名单账号原创帖
+- 保存原文与中文翻译
+- 展示实时流、今日汇总、系统状态
+- 通过网页管理账号、分组和设置
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: 运行测试确认通过**
 
-Run: `python -m pytest tests/e2e/test_reader_flow.py -v`
+Run: `npm run test -- tests/unit/scheduler.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add tests/e2e/test_reader_flow.py README.md .env.example templates/ui/feed.html
-git commit -m "test: add end-to-end reader verification"
+git add src/lib src/modules/crawler/scheduler.ts README.md .env.example tests/unit/scheduler.test.ts
+git commit -m "docs: add environment and scheduler basics"
 ```
 
-## Spec Coverage Check
+## Spec 覆盖检查
 
-- Personal web-based reader: covered by Tasks 8 and 10
-- Whitelisted X accounts and groups: covered by Task 2
-- Original-post ingestion and storage: covered by Tasks 3 and 5
-- Replaceable X fetch path: covered by Task 4
-- Proxy-backed crawler design: covered by Task 4
-- Translation workflow: covered by Tasks 6 and 7
-- Same-day summary page: covered by Task 8
-- System status page: covered by Task 8
-- Web-admin-first configuration: covered by Tasks 2 and 9
-- Cloud-friendly background execution: covered by Tasks 1 and 7
+- 个人使用的网页工具：Task 8、Task 9、Task 10
+- 白名单账号与分组：Task 2、Task 3、Task 9
+- 原创帖抓取与入库：Task 4、Task 5、Task 6
+- 可替换抓取源：Task 5
+- 代理池接入：Task 5
+- 中文翻译：Task 7
+- 实时流：Task 8
+- 今日汇总：Task 8
+- 系统状态页：Task 8
+- 网页后台配置：Task 9
+- 云服务器友好的单项目部署：Task 1、Task 2、Task 10
 
-## Placeholder Scan
+## 占位符扫描
 
-Scanned the plan for unfinished markers and vague implementation notes.
+已检查整份计划：
 
-Result:
+- 没有未完成标记
+- 没有“后面再补”的模糊步骤
+- 没有依赖上下文才能理解的缩写说明
 
-- No unfinished markers remain
-- No cross-task "same as above" shortcuts remain
-- No vague "handle this later" instructions remain
+## 类型一致性检查
 
-## Type Consistency Check
-
-- `SourceAccount` is the account model name throughout
-- `RawPost` is the raw-content model name throughout
-- `PostTranslation` is the translation model name throughout
-- `crawl_account()` returns `CrawlRun` throughout
-- `translate_post()` returns `PostTranslation` throughout
+- `AccountGroup`、`SourceAccount`、`RawPost`、`PostTranslation`、`CrawlRun` 与 spec 命名一致
+- 抓取源统一通过 `SourceAdapter` 接口暴露
+- 代理配置统一通过 `buildProxyUrl()` 和 session 模块进入抓取层
+- 翻译逻辑统一通过 `src/modules/translation/service.ts` 进入
