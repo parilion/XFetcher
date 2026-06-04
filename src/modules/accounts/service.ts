@@ -1,3 +1,3 @@
 export function normalizeHandle(input: string): string {
-  return input.trim().replace(/^@/, "");
+  return input.trim().replace(/^@/, "").toLowerCase();
 }
