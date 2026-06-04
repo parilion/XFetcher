@@ -2,10 +2,15 @@ export type ProxyConfig = {
   scheme: string;
   host: string;
   port: number;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
 };
 
 export function buildProxyUrl(config: ProxyConfig): string {
-  return `${config.scheme}://${config.username}:${config.password}@${config.host}:${config.port}`;
+  const credentials =
+    config.username !== undefined && config.password !== undefined
+      ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@`
+      : "";
+
+  return `${config.scheme}://${credentials}${config.host}:${config.port}`;
 }

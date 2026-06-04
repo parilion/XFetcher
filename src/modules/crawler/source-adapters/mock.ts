@@ -2,10 +2,11 @@ import type {
   FetchedPost,
   FetchOriginalPostsInput,
   SourceAdapter,
+  SourceType,
 } from "./base";
 
 export class MockSourceAdapter implements SourceAdapter {
-  sourceType = "mock";
+  sourceType: SourceType = "mock";
 
   async fetchOriginalPosts(
     input: FetchOriginalPostsInput,
