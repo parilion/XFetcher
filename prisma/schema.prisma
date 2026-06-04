@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AccountGroup {
+  id                   String          @id @default(cuid())
+  name                 String          @unique
+  description          String          @default("")
+  defaultFetchInterval Int             @default(300)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  accounts             SourceAccount[]
+}
+
+model SourceAccount {
+  id          String         @id @default(cuid())
+  xHandle     String         @unique
+  displayName String
+  enabled     Boolean        @default(true)
+  groupId     String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  group       AccountGroup   @relation(fields: [groupId], references: [id])
+  rawPosts    RawPost[]
+  crawlRuns   CrawlRun[]
+}
+
+model RawPost {
+  id               String           @id @default(cuid())
+  sourceAccountId  String
+  externalPostId   String
+  originalText     String
+  originalLanguage String
+  postedAt         DateTime
+  fetchedAt        DateTime         @default(now())
+  sourceType       String
+  rawPayload       Json
+  sourceAccount    SourceAccount    @relation(fields: [sourceAccountId], references: [id])
+  translation      PostTranslation?
+
+  @@unique([sourceAccountId, externalPostId])
+}
+
+model PostTranslation {
+  id               String   @id @default(cuid())
+  rawPostId        String   @unique
+  translatedTextZh String   @default("")
+  status           String   @default("pending")
+  errorMessage     String   @default("")
+  modelName        String   @default("mock-translator")
+  modelVersion     String   @default("v1")
+  translatedAt     DateTime?
+  rawPost          RawPost  @relation(fields: [rawPostId], references: [id])
+}
+
+model CrawlRun {
+  id                     String         @id @default(cuid())
+  sourceAccountId        String
+  status                 String
+  fetchedCount           Int            @default(0)
+  insertedCount          Int            @default(0)
+  failedCount            Int            @default(0)
+  proxySessionIdentifier String         @default("")
+  errorSummary           String         @default("")
+  startedAt              DateTime       @default(now())
+  finishedAt             DateTime?
+  sourceAccount          SourceAccount  @relation(fields: [sourceAccountId], references: [id])
+}
