@@ -9,15 +9,32 @@ export type AppEnv = {
   proxyPassword: string;
 };
 
+function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
+  const value = env[key];
+
+  if (value === undefined || value.trim() === "") {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+
+  return value;
+}
+
 export function readAppEnv(env: NodeJS.ProcessEnv = process.env): AppEnv {
+  const proxyPortValue = requireEnv(env, "PROXY_PORT");
+  const proxyPort = Number(proxyPortValue);
+
+  if (!Number.isInteger(proxyPort) || proxyPort <= 0) {
+    throw new Error("Environment variable PROXY_PORT must be a positive integer");
+  }
+
   return {
-    databaseUrl: env.DATABASE_URL ?? "",
-    redisUrl: env.REDIS_URL ?? "",
-    sourceAdapter: env.X_SOURCE_ADAPTER ?? "mock",
-    proxyScheme: env.PROXY_SCHEME ?? "http",
-    proxyHost: env.PROXY_HOST ?? "",
-    proxyPort: Number(env.PROXY_PORT ?? 0),
-    proxyUsername: env.PROXY_USERNAME ?? "",
-    proxyPassword: env.PROXY_PASSWORD ?? "",
+    databaseUrl: requireEnv(env, "DATABASE_URL"),
+    redisUrl: requireEnv(env, "REDIS_URL"),
+    sourceAdapter: requireEnv(env, "X_SOURCE_ADAPTER"),
+    proxyScheme: requireEnv(env, "PROXY_SCHEME"),
+    proxyHost: requireEnv(env, "PROXY_HOST"),
+    proxyPort,
+    proxyUsername: requireEnv(env, "PROXY_USERNAME"),
+    proxyPassword: requireEnv(env, "PROXY_PASSWORD"),
   };
 }
