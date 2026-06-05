@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -77,4 +77,21 @@ model CrawlRun {
   sourceAccount          SourceAccount  @relation(fields: [sourceAccountId], references: [id], onDelete: Cascade)
 
   @@index([sourceAccountId])
+}
+
+model AihotItem {
+  id          String   @id
+  title       String   @db.VarChar(512)
+  titleEn     String?  @db.VarChar(512)
+  url         String   @db.VarChar(2048)
+  source      String   @db.VarChar(512)
+  publishedAt DateTime?
+  summary     String?  @db.Text
+  category    String?  @db.VarChar(64)
+  rawPayload  Json
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  @@index([category, publishedAt])
+  @@index([publishedAt])
 }

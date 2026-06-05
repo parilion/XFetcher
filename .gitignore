@@ -1,1 +1,7 @@
+.next/
+.env
+.next-dev.*.log
 .superpowers/
+.vscode/
+node_modules/
+test-results/

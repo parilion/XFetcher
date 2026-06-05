@@ -22,6 +22,8 @@ describe("prisma schema", () => {
     );
     expect(schema).toContain("@@index([groupId])");
     expect(schema).toContain("@@index([sourceAccountId])");
+    expect(schema).toContain("model AihotItem");
+    expect(schema).toContain("@@index([category, publishedAt])");
   });
 
   it("validates with prisma", () => {
@@ -29,8 +31,7 @@ describe("prisma schema", () => {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        DATABASE_URL:
-          "postgresql://postgres:postgres@127.0.0.1:5432/xfetcher?schema=public",
+        DATABASE_URL: "mysql://user:password@127.0.0.1:3307/xfetcher",
       },
       encoding: "utf8",
     });

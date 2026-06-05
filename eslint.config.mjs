@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
+import { globalIgnores } from "eslint/config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,6 +10,9 @@ const compat = new FlatCompat({
   baseDirectory: __dirname,
 });
 
-const config = [...compat.extends("next/core-web-vitals")];
+const config = [
+  globalIgnores([".next/**", "node_modules/**", "test-results/**"]),
+  ...compat.extends("next/core-web-vitals"),
+];
 
 export default config;
