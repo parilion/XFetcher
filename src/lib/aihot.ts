@@ -11,6 +11,7 @@ export const AIHOT_CATEGORY_LABELS = {
 } as const;
 
 export type AihotCategory = keyof typeof AIHOT_CATEGORY_LABELS;
+export type AihotFeedMode = "selected" | "all";
 export type AihotCategoryQueryValue =
   | string
   | string[]
@@ -90,10 +91,14 @@ export type AihotDailiesResponse = {
 type FetchItemsOptions = {
   category?: AihotCategory;
   cursor?: string;
-  mode?: "selected" | "all";
+  mode?: AihotFeedMode;
   q?: string;
   take?: number;
 };
+
+export function parseAihotFeedMode(value?: string | null): AihotFeedMode {
+  return value === "all" ? "all" : "selected";
+}
 
 export function getAihotCategoryLabel(category: AihotCategory | null): string {
   if (!category) {

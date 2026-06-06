@@ -16,30 +16,50 @@ const FILTERS: Array<{
 type FilterBarProps = {
   activeCategory: AihotCategory | null;
   basePath?: string;
+  emptyLabel?: string;
+  q?: string;
 };
 
-export function FilterBar({ activeCategory, basePath = "/" }: FilterBarProps) {
+export function FilterBar({
+  activeCategory,
+  basePath = "/",
+  emptyLabel = "精选",
+  q,
+}: FilterBarProps) {
   return (
-    <nav aria-label="资讯分类" className="flex flex-wrap gap-2">
+    <nav aria-label="资讯分类" className="feed-toolbar">
       {FILTERS.map((filter) => {
         const isActive = filter.category === activeCategory;
+        const label = filter.category ? filter.label : emptyLabel;
 
         return (
           <Link
             aria-current={isActive ? "page" : undefined}
             href={
-              filter.category
-                ? `${basePath}?category=${filter.category}`
-                : basePath
+              (() => {
+                const params = new URLSearchParams();
+
+                if (filter.category) {
+                  params.set("category", filter.category);
+                }
+
+                if (q) {
+                  params.set("q", q);
+                }
+
+                const query = params.toString();
+
+                return query ? `${basePath}?${query}` : basePath;
+              })()
             }
-            key={filter.label}
-          className={
+            key={label}
+            className={
               isActive
-                ? "inline-flex min-h-11 items-center rounded-full bg-[var(--text)] px-4 text-sm font-semibold text-[var(--surface)]"
-                : "inline-flex min-h-11 items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          }
-        >
-            {filter.label}
+                ? "feed-page-chip is-active"
+                : "feed-page-chip"
+            }
+          >
+            {label}
           </Link>
         );
       })}

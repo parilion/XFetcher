@@ -3,6 +3,7 @@ import {
   formatBeijingTime,
   getAihotCategoryLabel,
   type AihotCategory,
+  type AihotFeedMode,
 } from "@/lib/aihot";
 import { db } from "@/lib/db";
 import { listStoredAihotItems } from "./store";
@@ -22,14 +23,24 @@ export type FeedListItem = {
 export type FeedPageData = {
   items: FeedListItem[];
   nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
 };
 
 export async function getStoredFeedPage(
   category: AihotCategory | null,
+  mode: AihotFeedMode,
+  page = 1,
+  q?: string,
 ): Promise<FeedPageData> {
   const result = await listStoredAihotItems({
     category: category ?? undefined,
     db,
+    mode,
+    page,
+    q,
     take: 30,
   });
 
@@ -46,5 +57,9 @@ export async function getStoredFeedPage(
       url: item.url,
     })),
     nextCursor: result.nextCursor,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalCount: result.totalCount,
+    totalPages: result.totalPages,
   };
 }

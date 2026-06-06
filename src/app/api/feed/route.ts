@@ -4,6 +4,7 @@ import {
   formatBeijingTime,
   getAihotCategoryLabel,
   parseAihotCategory,
+  parseAihotFeedMode,
 } from "@/lib/aihot";
 import { db } from "@/lib/db";
 import { listStoredAihotItems } from "@/modules/aihot/store";
@@ -13,10 +14,16 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("category") ?? undefined,
   );
   const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
+  const mode = parseAihotFeedMode(request.nextUrl.searchParams.get("mode"));
+  const page = Number(request.nextUrl.searchParams.get("page") ?? "1");
+  const q = request.nextUrl.searchParams.get("q") ?? undefined;
   const result = await listStoredAihotItems({
     category: category ?? undefined,
     cursor,
     db,
+    mode,
+    page,
+    q,
     take: 30,
   });
 
@@ -33,5 +40,9 @@ export async function GET(request: NextRequest) {
       url: item.url,
     })),
     nextCursor: result.nextCursor,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalCount: result.totalCount,
+    totalPages: result.totalPages,
   });
 }

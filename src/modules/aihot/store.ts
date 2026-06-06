@@ -1,11 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
-import type { AihotCategory, AihotItemRaw } from "@/lib/aihot";
+import type { AihotCategory, AihotFeedMode, AihotItemRaw } from "@/lib/aihot";
 
 type AihotDb = Pick<PrismaClient, "aihotItem">;
 
 export type SyncAihotItemsInput = {
   db: AihotDb;
   items: AihotItemRaw[];
+  mode: AihotFeedMode;
 };
 
 export type SyncAihotItemsResult = {
@@ -18,6 +19,9 @@ export type ListStoredAihotItemsInput = {
   category?: AihotCategory;
   cursor?: string;
   db: AihotDb;
+  mode: AihotFeedMode;
+  page?: number;
+  q?: string;
   take?: number;
 };
 
@@ -86,6 +90,7 @@ export function decodeAihotCursor(cursor?: string): CursorPayload | null {
 export async function syncAihotItems({
   db,
   items,
+  mode,
 }: SyncAihotItemsInput): Promise<SyncAihotItemsResult> {
   let insertedCount = 0;
   let updatedCount = 0;
@@ -96,13 +101,18 @@ export async function syncAihotItems({
       where: { id: item.id },
     });
     const payload = toDbPayload(item);
+    const modePayload = mode === "selected" ? { isSelected: true } : {};
 
     await db.aihotItem.upsert({
       create: {
         id: item.id,
         ...payload,
+        ...modePayload,
       },
-      update: payload,
+      update: {
+        ...payload,
+        ...modePayload,
+      },
       where: { id: item.id },
     });
 
@@ -124,18 +134,42 @@ export async function listStoredAihotItems({
   category,
   cursor,
   db,
+  mode,
+  page = 1,
+  q,
   take = 30,
 }: ListStoredAihotItemsInput): Promise<{
   items: StoredAihotItem[];
   nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
 }> {
   const decodedCursor = decodeAihotCursor(cursor);
   const pageSize = Math.min(Math.max(take, 1), 50);
+  const safePage = Math.max(Math.floor(page), 1);
+  const keyword = q?.trim();
+  const baseWhere = {
+    ...(mode === "selected" ? { isSelected: true } : {}),
+    ...(category ? { category } : {}),
+    ...(keyword
+      ? {
+          OR: [
+            { title: { contains: keyword } },
+            { titleEn: { contains: keyword } },
+            { source: { contains: keyword } },
+            { summary: { contains: keyword } },
+          ],
+        }
+      : {}),
+  };
   const items = await db.aihotItem.findMany({
     orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
     take: pageSize + 1,
+    skip: cursor ? 0 : (safePage - 1) * pageSize,
     where: {
-      ...(category ? { category } : {}),
+      ...baseWhere,
       ...(decodedCursor?.publishedAt
         ? {
             OR: [
@@ -149,6 +183,9 @@ export async function listStoredAihotItems({
         : {}),
     },
   });
+  const totalCount = await db.aihotItem.count({
+    where: baseWhere,
+  });
   const pageItems = items.slice(0, pageSize);
   const nextItem = items[pageSize];
 
@@ -157,5 +194,9 @@ export async function listStoredAihotItems({
     nextCursor: nextItem
       ? encodeAihotCursor(nextItem as StoredAihotItem)
       : null,
+    page: safePage,
+    pageSize,
+    totalCount,
+    totalPages: Math.max(Math.ceil(totalCount / pageSize), 1),
   };
 }

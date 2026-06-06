@@ -88,10 +88,12 @@ model AihotItem {
   publishedAt DateTime?
   summary     String?  @db.Text
   category    String?  @db.VarChar(64)
+  isSelected  Boolean  @default(false)
   rawPayload  Json
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @updatedAt
 
+  @@index([isSelected, category, publishedAt])
   @@index([category, publishedAt])
   @@index([publishedAt])
 }
