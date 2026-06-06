@@ -1,4 +1,5 @@
 import {
+  type AihotDailyArchiveItem,
   fetchAihotDaily,
   fetchAihotDailyArchive,
   type AihotDailySection,
@@ -36,6 +37,22 @@ function getDailyHref(date: string, latestDate: string) {
   return date === latestDate ? "/daily" : `/daily/${date}`;
 }
 
+function groupArchiveByMonth(items: AihotDailyArchiveItem[]) {
+  const monthMap = new Map<string, AihotDailyArchiveItem[]>();
+
+  for (const item of items) {
+    const monthKey = item.date.slice(0, 7);
+    monthMap.set(monthKey, [...(monthMap.get(monthKey) ?? []), item]);
+  }
+
+  return Array.from(monthMap.entries()).map(([monthKey, monthItems]) => ({
+    count: monthItems.length,
+    items: monthItems,
+    key: monthKey,
+    label: `${monthKey.slice(0, 4)} 年 ${Number(monthKey.slice(5, 7))} 月`,
+  }));
+}
+
 export async function DailyPageContent({ date }: DailyPageContentProps) {
   const [daily, archive] = await Promise.all([
     fetchAihotDaily(date),
@@ -46,9 +63,8 @@ export async function DailyPageContent({ date }: DailyPageContentProps) {
     (total, section) => total + section.items.length,
     0,
   );
-  const currentMonth = `${daily.date.slice(0, 4)} 年 ${Number(
-    daily.date.slice(5, 7),
-  )} 月`;
+  const currentMonthKey = daily.date.slice(0, 7);
+  const monthGroups = groupArchiveByMonth(archive.items);
 
   return (
     <main className="min-h-screen bg-[var(--daily-bg)]">
@@ -66,39 +82,63 @@ export async function DailyPageContent({ date }: DailyPageContentProps) {
             </div>
           </Link>
 
-          <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between text-sm font-semibold text-[var(--text)]">
-              <span>{currentMonth}</span>
-              <span className="font-mono text-xs text-[var(--muted)]">
-                {archive.count}
-              </span>
-            </div>
-            <div className="grid gap-1">
-              {archive.items.map((item) => {
-                const isCurrent = item.date === daily.date;
+          <div className="mt-8 grid gap-4">
+            {monthGroups.map((group) => {
+              const isCurrentMonth = group.key === currentMonthKey;
 
-                return (
-                  <Link
-                    aria-current={isCurrent ? "page" : undefined}
-                    className={
-                      isCurrent
-                        ? "grid grid-cols-[34px_minmax(0,1fr)] gap-3 rounded bg-[var(--selected-bg)] px-3 py-2 text-[var(--accent-strong)]"
-                        : "grid grid-cols-[34px_minmax(0,1fr)] gap-3 rounded px-3 py-2 text-[var(--muted)] transition-colors hover:bg-[var(--nav-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                    }
-                    href={getDailyHref(item.date, latestDate)}
-                    key={item.date}
-                  >
-                    <span className="font-mono text-xs">
-                      {Number(item.date.slice(8, 10))} 日
+              return (
+                <section
+                  className="border-b border-[var(--border)] pb-4 last:border-b-0"
+                  key={group.key}
+                >
+                  <div className="mb-3 flex items-center justify-between text-sm font-semibold text-[var(--text)]">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="font-mono text-xs text-[var(--muted)]">
+                        {isCurrentMonth ? "⌄" : "›"}
+                      </span>
+                      {group.label}
                     </span>
-                    <span className="truncate text-xs leading-5">
-                      {item.leadTitle}
+                    <span className="font-mono text-xs text-[var(--muted)]">
+                      {group.count}
                     </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
+                  </div>
+                  <div className="grid gap-1">
+                    {group.items.map((item) => {
+                      const isCurrent = item.date === daily.date;
+
+                      return (
+                        <Link
+                          aria-current={isCurrent ? "page" : undefined}
+                          className={
+                            isCurrent
+                              ? "grid grid-cols-[34px_minmax(0,1fr)] gap-3 rounded bg-[var(--selected-bg)] px-3 py-2 text-[var(--accent-strong)]"
+                              : "grid grid-cols-[34px_minmax(0,1fr)] gap-3 rounded px-3 py-2 text-[var(--muted)] transition-colors hover:bg-[var(--nav-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          }
+                          href={getDailyHref(item.date, latestDate)}
+                          key={item.date}
+                        >
+                          <span className="font-mono text-xs">
+                            {Number(item.date.slice(8, 10))} 日
+                          </span>
+                          <span className="truncate text-xs leading-5">
+                            {item.leadTitle}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+          <a
+            className="mt-2 inline-flex text-xs font-medium text-[var(--muted)] transition-colors hover:text-[var(--accent-strong)]"
+            href="https://aihot.virxact.com/daily"
+            rel="noreferrer"
+            target="_blank"
+          >
+            全部日报 →
+          </a>
         </aside>
 
         <article className="min-w-0 px-5 py-10 sm:px-10 lg:px-16">
