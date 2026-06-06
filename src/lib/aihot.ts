@@ -177,8 +177,9 @@ export async function fetchAihotItemsPage(
   return (await response.json()) as AihotItemsResponse;
 }
 
-export async function fetchAihotDaily(): Promise<AihotDaily> {
-  const response = await fetch(`${AIHOT_BASE_URL}/api/public/daily`, {
+export async function fetchAihotDaily(date?: string): Promise<AihotDaily> {
+  const dailyPath = date ? `/api/public/daily/${date}` : "/api/public/daily";
+  const response = await fetch(`${AIHOT_BASE_URL}${dailyPath}`, {
     headers: {
       "User-Agent": AIHOT_USER_AGENT,
     },
