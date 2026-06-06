@@ -13,11 +13,6 @@ const navItems = [
     label: "AI 日报",
     icon: "M6 4h12a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 4h6M9 12h6M9 16h4",
   },
-  {
-    href: "/status",
-    label: "系统状态",
-    icon: "M12 6v6l4 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
-  },
 ];
 
 type AppShellProps = {
