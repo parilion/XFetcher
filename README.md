@@ -43,6 +43,8 @@ docs                    项目文档
 
 ## 本地开发
 
+完整本地部署说明见 [docs/local-setup.md](docs/local-setup.md)。
+
 1. 安装依赖：
 
 ```bash
