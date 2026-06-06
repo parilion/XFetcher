@@ -75,6 +75,18 @@ export type AihotDaily = {
   }>;
 };
 
+export type AihotDailyArchiveItem = {
+  date: string;
+  generatedAt: string;
+  leadTitle: string;
+  leadParagraph: string | null;
+};
+
+export type AihotDailiesResponse = {
+  count: number;
+  items: AihotDailyArchiveItem[];
+};
+
 type FetchItemsOptions = {
   category?: AihotCategory;
   cursor?: string;
@@ -180,6 +192,28 @@ export async function fetchAihotDaily(): Promise<AihotDaily> {
   }
 
   return (await response.json()) as AihotDaily;
+}
+
+export async function fetchAihotDailyArchive(
+  take = 12,
+): Promise<AihotDailiesResponse> {
+  const url = new URL("/api/public/dailies", AIHOT_BASE_URL);
+  url.searchParams.set("take", String(take));
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": AIHOT_USER_AGENT,
+    },
+    next: {
+      revalidate: 300,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI HOT dailies request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as AihotDailiesResponse;
 }
 
 export function formatBeijingTime(value: string | null): string {

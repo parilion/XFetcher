@@ -15,9 +15,10 @@ const FILTERS: Array<{
 
 type FilterBarProps = {
   activeCategory: AihotCategory | null;
+  basePath?: string;
 };
 
-export function FilterBar({ activeCategory }: FilterBarProps) {
+export function FilterBar({ activeCategory, basePath = "/" }: FilterBarProps) {
   return (
     <nav aria-label="资讯分类" className="flex flex-wrap gap-2">
       {FILTERS.map((filter) => {
@@ -26,7 +27,11 @@ export function FilterBar({ activeCategory }: FilterBarProps) {
         return (
           <Link
             aria-current={isActive ? "page" : undefined}
-            href={filter.category ? `/?category=${filter.category}` : "/"}
+            href={
+              filter.category
+                ? `${basePath}?category=${filter.category}`
+                : basePath
+            }
             key={filter.label}
           className={
               isActive

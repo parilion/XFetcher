@@ -4,9 +4,14 @@ import type { ReactNode } from "react";
 const navItems = [
   { href: "/", label: "精选", icon: "M13 2 3 14h9l-1 8 10-12h-9l1-8Z" },
   {
+    href: "/all",
+    label: "全部 AI 动态",
+    icon: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  },
+  {
     href: "/daily",
     label: "AI 日报",
-    icon: "M6 3h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h8M8 12h8M8 16h5",
+    icon: "M6 4h12a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 4h6M9 12h6M9 16h4",
   },
   {
     href: "/status",
