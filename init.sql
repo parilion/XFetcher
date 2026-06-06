@@ -86,10 +86,12 @@ CREATE TABLE IF NOT EXISTS `AihotItem` (
     `publishedAt` DATETIME(3) NULL,
     `summary` TEXT NULL,
     `category` VARCHAR(64) NULL,
+    `isSelected` BOOLEAN NOT NULL DEFAULT false,
     `rawPayload` JSON NOT NULL,
     `firstSeenAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `lastSeenAt` DATETIME(3) NOT NULL,
 
+    INDEX `AihotItem_isSelected_category_publishedAt_idx`(`isSelected`, `category`, `publishedAt`),
     INDEX `AihotItem_category_publishedAt_idx`(`category`, `publishedAt`),
     INDEX `AihotItem_publishedAt_idx`(`publishedAt`),
     PRIMARY KEY (`id`)
