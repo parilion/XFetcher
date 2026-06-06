@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { PostCard } from "@/components/feed/post-card";
 import type { AihotCategory } from "@/lib/aihot";
 import type { FeedListItem } from "@/modules/aihot/feed";
@@ -25,6 +25,12 @@ export function FeedList({
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setItems(initialItems);
+    setNextCursor(initialNextCursor);
+    setError("");
+  }, [category, initialItems, initialNextCursor]);
 
   function loadMore() {
     if (!nextCursor || isPending) {
